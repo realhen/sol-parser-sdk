@@ -137,26 +137,18 @@ pub fn parse_global_config(account: &AccountData, metadata: EventMetadata) -> Op
 /// # Returns
 /// 返回 `Some(DexEvent::PumpSwapPoolAccount)` 如果解析成功，否则返回 `None`
 pub fn parse_pool(account: &AccountData, metadata: EventMetadata) -> Option<DexEvent> {
-    // 检查账户数据长度（discriminator + data）
-    if account.data.len() < POOL_LEGACY_SIZE + 8 {
-        return None;
-    }
-    let body_len = account.data.len() - 8;
-    if body_len != POOL_LEGACY_SIZE
-        && body_len != POOL_BOOST_SIZE
-        && body_len != POOL_CREATOR_FEE_SIZE
-        && body_len < POOL_SIZE
-    {
-        return None;
-    }
-
-    // 检查 discriminator
     if !has_discriminator(&account.data, discriminators::POOL_ACCOUNT) {
         return None;
     }
-
-    // 解析 Pool 数据（跳过 8 字节 discriminator）
     let data = &account.data[8..];
+    let legacy_padding =
+        data.len() == POOL_LEGACY_SIZE && data[237..].iter().all(|byte| *byte == 0);
+    if data.len() < POOL_SIZE
+        && ![203, 235, 236, 237, 253, 261, 262].contains(&data.len())
+        && !legacy_padding
+    {
+        return None;
+    }
     let mut offset = 0;
 
     let pool_bump = read_u8(data, offset)?;
@@ -186,13 +178,13 @@ pub fn parse_pool(account: &AccountData, metadata: EventMetadata) -> Option<DexE
     let lp_supply = read_u64_le(data, offset)?;
     offset += 8;
 
-    let coin_creator = read_pubkey(data, offset)?;
+    let coin_creator = read_pubkey(data, offset).unwrap_or_default();
     offset += 32;
 
-    let is_mayhem_mode = read_u8(data, offset)? != 0;
+    let is_mayhem_mode = read_u8(data, offset).unwrap_or_default() != 0;
     offset += 1;
 
-    let is_cashback_coin = read_u8(data, offset)? != 0;
+    let is_cashback_coin = read_u8(data, offset).unwrap_or_default() != 0;
     offset += 1;
 
     let virtual_quote_reserves = data
@@ -356,7 +348,7 @@ mod tests {
 
     #[test]
     fn parse_pool_rejects_partial_current_layout() {
-        for body_len in (245..253).chain(254..262) {
+        for body_len in (245..253).chain(254..261) {
             let account = pool_account(Some(987_654_321), 8 + body_len);
             assert!(parse_pool(&account, EventMetadata::default()).is_none());
         }

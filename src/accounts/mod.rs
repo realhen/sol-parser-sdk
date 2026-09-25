@@ -409,13 +409,9 @@ fn parse_pumpfun_account(account: &AccountData, metadata: EventMetadata) -> Opti
     }
     if has_discriminator(&account.data, BONDING_CURVE_DISCRIMINATOR) {
         let data = &account.data[8..];
-        const LEGACY_BODY_LEN: usize = 107;
-        const CREATOR_FEE_BODY_LEN: usize = 116;
-        const HOLDER_REWARD_BODY_LEN: usize = 117;
-        if data.len() != LEGACY_BODY_LEN
-            && data.len() != CREATOR_FEE_BODY_LEN
-            && data.len() < HOLDER_REWARD_BODY_LEN
-        {
+        // Only complete historical fields may be absent. Current allocations can
+        // include trailing reserved bytes without changing the known layout.
+        if data.len() < 117 && ![41, 73, 74, 75, 107, 115, 116].contains(&data.len()) {
             return None;
         }
         let mut offset = 0usize;
@@ -431,13 +427,13 @@ fn parse_pumpfun_account(account: &AccountData, metadata: EventMetadata) -> Opti
         offset += 8;
         let complete = read_u8(data, offset)? != 0;
         offset += 1;
-        let creator = read_pubkey(data, offset)?;
+        let creator = read_pubkey(data, offset).unwrap_or_default();
         offset += 32;
-        let is_mayhem_mode = read_u8(data, offset)? != 0;
+        let is_mayhem_mode = read_u8(data, offset).unwrap_or_default() != 0;
         offset += 1;
-        let is_cashback_coin = read_u8(data, offset)? != 0;
+        let is_cashback_coin = read_u8(data, offset).unwrap_or_default() != 0;
         offset += 1;
-        let quote_mint = read_pubkey(data, offset)?;
+        let quote_mint = read_pubkey(data, offset).unwrap_or_default();
         offset += 32;
         let creator_fee_bps = read_u64_le(data, offset).unwrap_or_default();
         offset += 8;
@@ -640,7 +636,7 @@ mod tests {
             other => panic!("expected bonding curve account, got {other:?}"),
         }
 
-        for body_len in 108..116 {
+        for body_len in 108..115 {
             let mut partial = account.clone();
             partial.data.truncate(8 + body_len);
             assert!(parse_account_unified(&partial, metadata(), Some(&filter)).is_none());
