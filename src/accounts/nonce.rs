@@ -17,8 +17,10 @@ const NONCE_OFFSET: usize = 40;
 pub fn parse_nonce_account(account: &AccountData, metadata: EventMetadata) -> Option<DexEvent> {
     let data = &account.data;
 
-    // Check size
-    if data.len() != NONCE_ACCOUNT_SIZE {
+    if account.owner != solana_sdk::pubkey!("11111111111111111111111111111111")
+        || account.executable
+        || !is_nonce_account(data)
+    {
         return None;
     }
 
@@ -49,5 +51,5 @@ pub fn parse_nonce_account(account: &AccountData, metadata: EventMetadata) -> Op
 ///
 /// Nonce accounts have a discriminator of [1, 0, 0, 0, 1, 0, 0, 0]
 pub fn is_nonce_account(data: &[u8]) -> bool {
-    data.len() >= 8 && data[0..8] == [1, 0, 0, 0, 1, 0, 0, 0]
+    data.len() == NONCE_ACCOUNT_SIZE && data[0..8] == [1, 0, 0, 0, 1, 0, 0, 0]
 }

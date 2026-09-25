@@ -89,22 +89,15 @@ pub unsafe fn read_pubkey_unchecked(data: &[u8], offset: usize) -> Pubkey {
 }
 
 #[inline(always)]
-/// # Safety
-///
-/// Caller must ensure the 4-byte length prefix is readable and, when present,
-/// the following bytes are valid UTF-8.
-pub unsafe fn read_str_unchecked(data: &[u8], offset: usize) -> Option<(&str, usize)> {
-    if data.len() < offset + 4 {
-        return None;
-    }
-
-    let len = read_u32_unchecked(data, offset) as usize;
-    if data.len() < offset + 4 + len {
-        return None;
-    }
-
-    let string_bytes = &data[offset + 4..offset + 4 + len];
-    let s = std::str::from_utf8_unchecked(string_bytes);
+/// Reads a length-prefixed UTF-8 string from untrusted transaction data.
+/// Returns `None` for truncated data, overflowing offsets or invalid UTF-8.
+/// The historical name is retained for source compatibility; no unsafe
+/// preconditions are required.
+pub fn read_str_unchecked(data: &[u8], offset: usize) -> Option<(&str, usize)> {
+    let start = offset.checked_add(4)?;
+    let len = u32::from_le_bytes(data.get(offset..start)?.try_into().ok()?) as usize;
+    let end = start.checked_add(len)?;
+    let s = std::str::from_utf8(data.get(start..end)?).ok()?;
     Some((s, 4 + len))
 }
 
@@ -566,12 +559,9 @@ fn parse_trade_event_optimized(
         // ix_name: String (4-byte length prefix + content)
         // Values: "buy" | "sell" | "buy_exact_sol_in" | "buy_exact_quote_in"
         let ix_name = if offset + 4 <= data.len() {
-            if let Some((s, len)) = read_str_unchecked(data, offset) {
-                offset += len;
-                s.to_string()
-            } else {
-                String::new()
-            }
+            let (s, len) = read_str_unchecked(data, offset)?;
+            offset += len;
+            s.to_string()
         } else {
             String::new()
         };
@@ -900,12 +890,9 @@ pub fn parse_trade_from_data(
         offset += 8;
 
         let ix_name = if offset + 4 <= data.len() {
-            if let Some((s, len)) = read_str_unchecked(data, offset) {
-                offset += len;
-                s.to_string()
-            } else {
-                String::new()
-            }
+            let (s, len) = read_str_unchecked(data, offset)?;
+            offset += len;
+            s.to_string()
         } else {
             String::new()
         };
